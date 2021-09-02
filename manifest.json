@@ -1,0 +1,26 @@
+{
+  "manifest_version": 2,
+  "name": "AWS Apps Container",
+  "version": "1.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{2258e9fe-f0b6-4f2d-a719-510d1ef0a65f}"
+    }
+  },
+  "homepage_url": "https://github.com/dangh/firefox-aws-apps-container",
+  "permissions": [
+    "tabs",
+    "contextualIdentities",
+    "cookies"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "run_at": "document_end",
+      "matches": ["*://*.awsapps.com/start*"],
+      "js": ["content.js"]
+    }
+  ]
+}
