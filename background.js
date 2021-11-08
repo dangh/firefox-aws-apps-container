@@ -24,7 +24,7 @@ async function ensureContainer(name) {
   if (contexts.length > 0) return contexts[0];
 
   return await browser.contextualIdentities.create({
-    name: container,
+    name,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     icon: ICONS[Math.floor(Math.random() * ICONS.length)],
   });
