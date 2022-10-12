@@ -1,7 +1,7 @@
 'use strict';
 
 const COLORS = ['blue', 'turquoise', 'green', 'yellow', 'orange', 'red', 'pink', 'purple', 'toolbar'];
-const ICONS = ['fingerprint', 'briefcase', 'dollar', 'cart', 'circle', 'gift', 'vacation', 'food', 'fruit', 'pet', 'tree', 'chill', 'fence'];
+const ICONS = ['fingerprint', 'briefcase', 'dollar', 'cart', 'vacation', 'gift', 'food', 'fruit', 'pet', 'tree', 'chill', 'circle', 'fence'];
 
 browser.runtime.onMessage.addListener((message, sender, reply) => {
   console.log('ping:', message);
@@ -19,13 +19,13 @@ async function openUrlInContainer(url, container, tab) {
   });
 }
 
-async function ensureContainer(name) {
+async function ensureContainer({ name, icon, color }) {
   let contexts = await browser.contextualIdentities.query({ name });
   if (contexts.length > 0) return contexts[0];
 
   return await browser.contextualIdentities.create({
     name,
-    color: COLORS[Math.floor(Math.random() * COLORS.length)],
-    icon: ICONS[Math.floor(Math.random() * ICONS.length)],
+    color: color || COLORS[Math.floor(Math.random() * COLORS.length)],
+    icon: icon || ICONS[Math.floor(Math.random() * ICONS.length)],
   });
 }
