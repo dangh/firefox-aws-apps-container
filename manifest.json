@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "AWS Apps Container",
-  "version": "1.2",
+  "version": "1.2.1",
   "browser_specific_settings": {
     "gecko": {
       "id": "{2258e9fe-f0b6-4f2d-a719-510d1ef0a65f}"
