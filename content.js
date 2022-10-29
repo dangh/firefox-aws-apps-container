@@ -8,13 +8,26 @@ observeAdd('a.profile-link', ($elements) => {
     let accountId = match?.groups?.accountId;
     let accountEmail = $element.closest('portal-instance')?.querySelector('.email')?.textContent;
     if (profileName) {
-      $element.addEventListener('click', (evt) => {
+      $element.addEventListener('click', async (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
-        browser.runtime.sendMessage({
+
+        let { ssoToken, tabId } = await browser.runtime.sendMessage({
           action: 'openUrlInContainer',
           url: $element.href,
           container: getContainerConfig({ instanceName, profileName, accountId, accountEmail }),
+        });
+
+        // fire request to fetch federation details, background will intercept and redirect accordingly
+        if (!ssoToken) ssoToken = /x-amz-sso_authn=(?<token>[^\s;]+)/.exec(document.cookie)?.groups?.token;
+        let region = document.querySelector('meta[name=region]').content;
+        let federationUrl = `https://portal.sso.${region}.amazonaws.com/federation/console?account_id=${accountId}&role_name=${profileName}#tab_id=${tabId}`;
+        fetch(federationUrl, {
+          method: 'GET',
+          headers: {
+            'x-amz-sso_bearer_token': ssoToken,
+            'x-amz-sso-bearer-token': ssoToken,
+          }
         });
       });
     }
