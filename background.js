@@ -11,14 +11,14 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // open blank new tab in container
       // if we cannot detect signin url within 500ms
       // redirect to the login page
-      let tab = await openUrlInContainer('about:blank', message.container, sender.tab.index + 1);
+      let { tabId, cookieStoreId } = await openUrlInContainer('about:blank', message.container, sender.tab.index + 1);
       setTimeout(async () => {
-        tab = browser.tabs.get(tab.id);
+        let tab = browser.tabs.get(tabId);
         if (tab.url == 'about:blank') {
-          redirect(tab.id, message.url);
+          redirect(tabId, message.url);
         }
       }, 500);
-      reply({ ssoToken, tabId: tab.id });
+      reply({ ssoToken, tabId, cookieStoreId });
     });
   }
 });
@@ -38,16 +38,26 @@ captureRequestHeaders({
 captureResponeData({
   urls: ['https://*.amazonaws.com/federation/console?*'],
   types: ['xmlhttprequest'],
-  onJSON(json, { details }) {
+  async onJSON(json, { details }) {
     console.debug('Federation details:', json);
     let { signInToken, signInFederationLocation, destination } = json;
     if (signInToken) {
+      let [tabId, cookieStoreId] = details.url.split('#').pop().split(',');
       if (!destination) {
-        let region = /\.(?<region>\w+-\w+-\d)\./.exec(details.url).groups.region;
+        // extract region from container cookie
+        let cookie = await browser.cookies.get({
+          storeId: cookieStoreId,
+          url: 'https://console.aws.amazon.com',
+          name: 'noflush_Region',
+        });
+        let region = cookie?.value;
+        if(!region) {
+          // extract region from request origin url
+          region = /\.(?<region>\w+-\w+-\d)\./.exec(details.url).groups.region;
+        }
         destination = `https://${region}.console.aws.amazon.com/console/home?region=${region}`;
       }
       let signInUrl = signInFederationLocation + '?Action=login&SigninToken=' + signInToken + '&Issuer=' + encodeURIComponent(details.originUrl) + '&Destination=' + encodeURIComponent(destination);
-      let tabId = details.url.split('#tab_id=').pop();
       redirect(tabId, signInUrl);
     }
   }
@@ -60,7 +70,10 @@ async function openUrlInContainer(url, container, index) {
     cookieStoreId: context.cookieStoreId,
     index,
   });
-  return tab;
+  return {
+    tabId: tab.id,
+    cookieStoreId: context.cookieStoreId,
+  };
 }
 
 async function ensureContainer({ name, icon, color }) {

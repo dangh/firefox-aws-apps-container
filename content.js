@@ -12,7 +12,7 @@ observeAdd('a.profile-link', ($elements) => {
         evt.preventDefault();
         evt.stopPropagation();
 
-        let { ssoToken, tabId } = await browser.runtime.sendMessage({
+        let { ssoToken, tabId, cookieStoreId } = await browser.runtime.sendMessage({
           action: 'openUrlInContainer',
           url: $element.href,
           container: getContainerConfig({ instanceName, profileName, accountId, accountEmail }),
@@ -21,7 +21,7 @@ observeAdd('a.profile-link', ($elements) => {
         // fire request to fetch federation details, background will intercept and redirect accordingly
         if (!ssoToken) ssoToken = /x-amz-sso_authn=(?<token>[^\s;]+)/.exec(document.cookie)?.groups?.token;
         let region = document.querySelector('meta[name=region]').content;
-        let federationUrl = `https://portal.sso.${region}.amazonaws.com/federation/console?account_id=${accountId}&role_name=${profileName}#tab_id=${tabId}`;
+        let federationUrl = `https://portal.sso.${region}.amazonaws.com/federation/console?account_id=${accountId}&role_name=${profileName}#${tabId},${cookieStoreId}`;
         fetch(federationUrl, {
           method: 'GET',
           headers: {
