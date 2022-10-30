@@ -2,83 +2,86 @@
 
 const COLORS = ['blue', 'turquoise', 'green', 'yellow', 'orange', 'red', 'pink', 'purple', 'toolbar'];
 const ICONS = ['fingerprint', 'briefcase', 'dollar', 'cart', 'vacation', 'gift', 'food', 'fruit', 'pet', 'tree', 'chill', 'circle', 'fence'];
+const SETTINGS = {
+  dashboardUrl: 'https://{region}.console.aws.amazon.com/console/home?region={region}',
+  timeToReauth: 5*60,
+  defaultContainerName: '{instance} / {profile}',
+};
 
-let ssoToken;
+let __ = console.log.bind(console, '📦');
 
 browser.runtime.onMessage.addListener((message, sender) => {
-  if (message.action == 'openUrlInContainer') {
-    return new Promise(async (reply) => {
-      // open blank new tab in container
-      // if we cannot detect signin url within 500ms
-      // redirect to the login page
-      let { tabId, cookieStoreId } = await openUrlInContainer('about:blank', message.container, sender.tab.index + 1);
-      setTimeout(async () => {
-        let tab = browser.tabs.get(tabId);
-        if (tab.url == 'about:blank') {
-          redirect(tabId, message.url);
-        }
-      }, 500);
-      reply({ ssoToken, tabId, cookieStoreId });
+  if (message.action == 'openUrl') {
+    return new Promise(async reply => {
+      let { url, ssoContext } = message;
+      __('Request to open url:', url, 'in context:', ssoContext);
+      // check if login is needed
+      let container = await createContainer(ssoContext);
+      let { region, expirationDate } = await getContainerContext({ container });
+      __('Container context:', { region, expirationDate });
+      let shouldReAuth = (Date.now()/1000 + SETTINGS.timeToReauth >= expirationDate);
+      if (!shouldReAuth) {
+        let dashboardUrl = SETTINGS.dashboardUrl.replaceAll('{region}', region || ssoContext.region);
+        __('Credential still valid. Open dashboard:', dashboardUrl);
+        openUrl(dashboardUrl, { container, opener: sender.tab });
+        reply({});
+      } else {
+        __('Credential expired. Reauthenticate.');
+        // open blank new tab in container
+        // if we cannot detect signin url within 500ms
+        // redirect to the login page
+        let tabId = await openUrl('about:blank', { container, opener: sender.tab });
+        setTimeout(() => {
+          let tab = browser.tabs.get(tabId);
+          if (tab.url == 'about:blank') {
+            openUrl(url, { tabId });
+          }
+        }, 500);
+        reply({ action: 'federate', tabId });
+      }
+    });
+  } else if (message.action == 'login') {
+    return new Promise(async reply => {
+      let { tabId, federationUrl, federationResult, ssoContext } = message;
+      __('federation details:', federationResult);
+      if (federationResult.signInToken) {
+        let { region } = await getContainerContext({ tabId });
+        let destination = SETTINGS.dashboardUrl.replaceAll('{region}', region || ssoContext.region);
+        let signInUrl = federationResult.signInFederationLocation
+          + '?Action=login'
+          + '&SigninToken=' + federationResult.signInToken
+          + '&Issuer=' + encodeURIComponent(federationUrl)
+          + '&Destination=' + encodeURIComponent(destination);
+        openUrl(signInUrl, { tabId });
+      }
+      reply();
     });
   }
 });
 
-captureRequestHeaders({
-  urls: ['https://*.amazonaws.com/user'],
-  types: ['xmlhttprequest'],
-  onHeaders(headers, { details }) {
-    let newToken = headers['x-amz-sso-bearer-token'];
-    if (newToken && (newToken != ssoToken)) {
-      console.info('Got new SSO token:', newToken);
-      ssoToken = newToken;
-    }
-  }
-});
-
-captureResponeData({
-  urls: ['https://*.amazonaws.com/federation/console?*'],
-  types: ['xmlhttprequest'],
-  async onJSON(json, { details }) {
-    console.debug('Federation details:', json);
-    let { signInToken, signInFederationLocation, destination } = json;
-    if (signInToken) {
-      let [tabId, cookieStoreId] = details.url.split('#').pop().split(',');
-      if (!destination) {
-        // extract region from container cookie
-        let cookie = await browser.cookies.get({
-          storeId: cookieStoreId,
-          url: 'https://console.aws.amazon.com',
-          name: 'noflush_Region',
-        });
-        let region = cookie?.value;
-        if(!region) {
-          // extract region from request origin url
-          region = /\.(?<region>\w+-\w+-\d)\./.exec(details.url).groups.region;
-        }
-        destination = `https://${region}.console.aws.amazon.com/console/home?region=${region}`;
+async function openUrl(url, { tabId, container, opener }) {
+  if (tabId) {
+    browser.tabs.executeScript(+tabId, {
+      code: `window.location.href='${url}'`,
+      matchAboutBlank: true,
+    });
+  } else if (container) {
+    let tab = await browser.tabs.create({
+      url,
+      cookieStoreId: container.cookieStoreId,
+      ...opener && {
+        index: opener.index + 1,
       }
-      let signInUrl = signInFederationLocation + '?Action=login&SigninToken=' + signInToken + '&Issuer=' + encodeURIComponent(details.originUrl) + '&Destination=' + encodeURIComponent(destination);
-      redirect(tabId, signInUrl);
-    }
+    });
+    tabId = tab.id;
   }
-});
-
-async function openUrlInContainer(url, container, index) {
-  let context = await ensureContainer(container);
-  let tab = await browser.tabs.create({
-    url,
-    cookieStoreId: context.cookieStoreId,
-    index,
-  });
-  return {
-    tabId: tab.id,
-    cookieStoreId: context.cookieStoreId,
-  };
+  return tabId;
 }
 
-async function ensureContainer({ name, icon, color }) {
-  let contexts = await browser.contextualIdentities.query({ name });
-  if (contexts.length > 0) return contexts[0];
+async function createContainer(ssoContext) {
+  let { name, icon, color } = getContainerConfig(ssoContext);
+  let containers = await browser.contextualIdentities.query({ name });
+  if (containers.length > 0) return containers[0];
 
   return await browser.contextualIdentities.create({
     name,
@@ -87,49 +90,54 @@ async function ensureContainer({ name, icon, color }) {
   });
 }
 
-function captureResponeData({ urls, types, onJSON }) {
-  browser.webRequest.onBeforeRequest.addListener(
-    details => {
-      if (details.method == 'OPTIONS') return;
-
-      let filter = browser.webRequest.filterResponseData(details.requestId);
-      let decoder = new TextDecoder('utf-8');
-      let str = '';
-
-      filter.ondata = event => {
-        str += decoder.decode(event.data, { stream: true });
-        filter.write(event.data);
-      };
-
-      filter.onstop = event => {
-        filter.disconnect();
-
-        let json = JSON.parse(str);
-        onJSON(json, { details });
-      };
-    },
-    { urls, types },
-    ['blocking']
-  );
+async function getContainerContext({ tabId, container }) {
+  __('get container context from:', { tabId, container });
+  let cookieStoreId = container?.cookieStoreId;
+  if (!cookieStoreId && tabId) {
+    let tab = await browser.tabs.get(tabId);
+    cookieStoreId = tab.cookieStoreId;
+  }
+  let region = (await browser.cookies.get({
+    storeId: cookieStoreId,
+    url: 'https://console.aws.amazon.com',
+    name: 'noflush_Region',
+  }))?.value;
+  let expirationDate = (await browser.cookies.get({
+    storeId: cookieStoreId,
+    url: `https://${region}.console.aws.amazon.com/console`,
+    name: 'aws-creds',
+  }))?.expirationDate || 0;
+  return { region, expirationDate };
 }
 
-function captureRequestHeaders({ urls, types, onHeaders }) {
-  browser.webRequest.onBeforeSendHeaders.addListener(
-    details => {
-      if (details.method == 'OPTIONS') return;
+function getContainerConfig(ssoContext) {
+  let { instanceName, profileName, accountId, accountEmail } = ssoContext;
+  let icon, color, name = SETTINGS.defaultContainerName;
 
-      let headers = details.requestHeaders.reduce((map, { name, value }) => { map[name] = value; return map; }, {});
-      onHeaders(headers, { details });
-    },
-    { urls, types },
-    ['requestHeaders']
-  );
-}
+  if (instanceName.startsWith('Travelstop')) {
+    icon = 'vacation';
+    let stage = {
+      'Travelstop PRODUCTION': 'PROD',
+      'Travelstop STAGE': 'STAGE',
+      'Travelstop TEST': 'TEST',
+      'Travelstop DEV': 'DEV',
+      'Travelstop DEV INDIA': 'DEV-IN',
+    }[instanceName];
+    color = {
+      'PROD': 'red',
+      'STAGE': 'yellow',
+      'TEST': 'blue',
+      'DEV': 'turquoise',
+      'DEV-IN': 'purple',
+    }[stage];
+    name = profileName.replace(/(Non)?Prod$/, '') + ' — ' + stage;
+  }
 
-function redirect(tabId, url) {
-  console.info('Redirect tab:', tabId, 'to', url)
-  browser.tabs.executeScript(+tabId, {
-    code: `window.location.href = '${url}'`,
-    matchAboutBlank: true,
-  });
+  name = name
+    .replaceAll('{profile}', profileName)
+    .replaceAll('{instance}', instanceName)
+    .replaceAll('{accountId}', accountId)
+    .replaceAll('{accountEmail}', accountEmail);
+
+  return { name, icon, color };
 }
