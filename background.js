@@ -31,8 +31,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
         // if we cannot detect signin url within 500ms
         // redirect to the login page
         let tabId = await openUrl('about:blank', { container, opener: sender.tab });
-        setTimeout(() => {
-          let tab = browser.tabs.get(tabId);
+        setTimeout(async () => {
+          let tab = await browser.tabs.get(tabId);
           if (tab.url == 'about:blank') {
             openUrl(url, { tabId });
           }
@@ -61,7 +61,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
 async function openUrl(url, { tabId, container, opener }) {
   if (tabId) {
-    browser.tabs.executeScript(+tabId, {
+    await browser.tabs.executeScript(+tabId, {
       code: `window.location.href='${url}'`,
       matchAboutBlank: true,
     });
