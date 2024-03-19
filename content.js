@@ -6,21 +6,50 @@ observeAdd('a.profile-link', $elements => {
   for (let $element of $elements) {
     let match = /\/(?<accountId>\d+) \((?<instanceName>[^)]+)\)\//.exec(decodeURIComponent($element.href));
     let instanceName = match?.groups?.instanceName;
-    let profileName = $element.title;
+    let roleName = $element.title;
     let accountId = match?.groups?.accountId;
     let accountEmail = $element.closest('portal-instance')?.querySelector('.email')?.textContent;
     let region = document.querySelector('meta[name=region]').content;
-    if (profileName) {
+    if (roleName) {
       $element.addEventListener('click', evt => {
         evt.preventDefault();
         evt.stopPropagation();
 
         let ssoContext = {
           instanceName,
-          profileName,
+          roleName,
           accountId,
           accountEmail,
           region,
+        };
+
+        openUrl($element.href, ssoContext);
+      });
+    }
+  }
+});
+
+// redesigned AWS console portal
+observeAdd('a[data-testid="federation-link"]', $elements => {
+  let env = JSON.parse(document.querySelector('#env').innerText);
+  for (let $element of $elements) {
+    let url = new URL(new URL($element.href).hash.slice(1), window.location);
+    let accountId = url.searchParams.get('account_id');
+    let roleName = url.searchParams.get('role_name');
+    let text = $element.closest('[data-testid="role-list-container"]').parentElement.querySelector('[data-testid="account-list-cell"]')?.innerText.trim();
+    let [instanceName] = text.split('\n');
+    let accountEmail = /[^\s@]+@[^\s@]+/.exec(text)?.[0];
+    if (roleName) {
+      $element.addEventListener('click', evt => {
+        evt.preventDefault();
+        evt.stopPropagation();
+
+        let ssoContext = {
+          instanceName,
+          roleName,
+          accountId,
+          accountEmail,
+          region: env.region,
         };
 
         openUrl($element.href, ssoContext);
@@ -42,7 +71,7 @@ async function openUrl(url, ssoContext) {
     __('Federation needed');
     let ssoToken = /x-amz-sso_authn=(?<token>[^\s;]+)/.exec(document.cookie)?.groups?.token;
     __('Extracted SSO token from cookie:', ssoToken);
-    let federationUrl = `https://portal.sso.${ssoContext.region}.amazonaws.com/federation/console?account_id=${ssoContext.accountId}&role_name=${ssoContext.profileName}`;
+    let federationUrl = `https://portal.sso.${ssoContext.region}.amazonaws.com/federation/console?account_id=${ssoContext.accountId}&role_name=${ssoContext.roleName}`;
     __('Federate with url:', federationUrl);
     let federationResponse = await fetch(federationUrl, {
       method: 'GET',

@@ -111,7 +111,7 @@ async function getContainerContext({ tabId, container }) {
 }
 
 function getContainerConfig(ssoContext) {
-  let { instanceName, profileName, accountId, accountEmail } = ssoContext;
+  let { instanceName, roleName, accountId, accountEmail } = ssoContext;
   let icon, color, name = SETTINGS.defaultContainerName;
 
   if (instanceName.startsWith('Travelstop')) {
@@ -130,11 +130,11 @@ function getContainerConfig(ssoContext) {
       'DEV': 'turquoise',
       'DEV-IN': 'purple',
     }[stage];
-    name = profileName.replace(/(Non)?Prod$/, '') + ' — ' + stage;
+    name = roleName.replace(/(Non)?Prod$/, '') + ' — ' + stage;
   }
 
   name = name
-    .replaceAll('{profile}', profileName)
+    .replaceAll('{profile}', roleName)
     .replaceAll('{instance}', instanceName)
     .replaceAll('{accountId}', accountId)
     .replaceAll('{accountEmail}', accountEmail);
