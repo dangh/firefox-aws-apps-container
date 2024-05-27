@@ -20,13 +20,13 @@
     "<all_urls>"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": ["src/background.js"]
   },
   "content_scripts": [
     {
       "run_at": "document_end",
       "matches": ["https://*.awsapps.com/start*"],
-      "js": ["content.js"]
+      "js": ["src/content.js"]
     }
   ]
 }
