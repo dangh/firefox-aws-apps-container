@@ -9,6 +9,7 @@
   },
   "homepage_url": "https://github.com/dangh/firefox-aws-apps-container",
   "permissions": [
+    "storage",
     "tabs",
     "contextualIdentities",
     "cookies",
@@ -28,5 +29,8 @@
       "matches": ["https://*.awsapps.com/start*"],
       "js": ["src/content.js"]
     }
-  ]
+  ],
+  "options_ui": {
+    "page": "src/options.html"
+  }
 }
